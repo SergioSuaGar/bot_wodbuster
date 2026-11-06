@@ -8,8 +8,9 @@ CONNECTION_ID = "xFATStrQAEREx1Nvyfi-Pw"
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+WODBUSTER_COOKIE = os.environ.get("WODBUSTER_COOKIE")
 
-# Cabeceras simulando un navegador real para esquivar filtros básicos anti-bot
+# Cabeceras simulando un navegador real
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
@@ -22,10 +23,14 @@ HEADERS = {
     "Referer": "https://vitalitywellness.wodbuster.com/athlete/reservas.aspx",
 }
 
+# Diccionario de cookies que se enviarán en cada petición
+COOKIES = {
+    ".ASPXAUTH": WODBUSTER_COOKIE  # O la cookie de sesión correspondiente
+}
+
 
 def enviar_telegram(mensaje):
   if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-    print(f"[Telegram Desactivado] {mensaje}")
     return
   url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
   payload = {
@@ -67,41 +72,35 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
 
   url_cargar = f"{BASE_URL}/LoadClass.ashx?ticks={ticks}&idu={IDU}"
 
-  # Realizamos la petición enviando las cabeceras de navegador
-  response = requests.get(url_cargar, headers=HEADERS)
-
-  print(
-      f"Consultando {fecha_str_esperada} (Ticks: {ticks}) -> Código HTTP:"
-      f" {response.status_code}"
-  )
+  # Enviamos tanto las cabeceras como la cookie de sesión real
+  response = requests.get(url_cargar, headers=HEADERS, cookies=COOKIES)
 
   if response.status_code == 403:
     print(
-        f" -> {fecha_str_esperada}: Cloudflare sigue bloqueando la petición"
-        " (403 Forbidden)."
+        f" -> {fecha_str_esperada}: Cloudflare bloqueó el acceso (Cookie"
+        " caducada o inválida)."
+    )
+    enviar_telegram(
+        f"⚠️ *Aviso WodBuster*\nLa cookie de sesión ha caducado o no es válida."
+        " Actualízala en GitHub."
     )
     return False
 
   if not response.text.strip():
-    print(f" -> {fecha_str_esperada}: El servidor devolvió texto vacío.")
     return False
 
   try:
     data = response.json()
   except Exception:
-    print(
-        f" -> {fecha_str_esperada}: No es un JSON válido. Respuesta:"
-        f" {response.text[:200]}"
-    )
     return False
 
-  clases_del_dj = data.get("Data", [])
-  if not clases_del_dj:
+  clases_del_dia = data.get("Data", [])
+  if not clases_del_dia:
     print(f" -> {fecha_str_esperada}: Las reservas aún no están abiertas.")
     return False
 
   id_clase = None
-  for bloque in clases_del_dj:
+  for bloque in clases_del_dia:
     if bloque.get("Hora") == hora_buscada:
       for val_wrapper in bloque.get("Valores", []):
         valor = val_wrapper.get("Valor", {})
@@ -114,19 +113,19 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
           break
 
   if not id_clase:
-    print(f" -> No se encontró ID válido para las {hora_buscada}.")
     return False
 
   url_inscribir = (
       f"{BASE_URL}/Calendario_Inscribir.ashx?id={id_clase}&ticks={ticks}"
       f"&idu={IDU}&connectionId={CONNECTION_ID}"
   )
-  res_inscripcion = requests.get(url_inscribir, headers=HEADERS)
+  res_inscripcion = requests.get(
+      url_inscribir, headers=HEADERS, cookies=COOKIES
+  )
 
   try:
     resultado_json = res_inscripcion.json()
   except Exception:
-    print("Error: La respuesta de inscripción no devolvió un JSON.")
     return False
 
   if resultado_json.get("Res", {}).get("EsCorrecto"):
