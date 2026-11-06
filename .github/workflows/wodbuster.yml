@@ -2,7 +2,7 @@ name: WodBuster Auto-Reservas
 
 on:
   schedule:
-    - cron: '*/3 8-13 * * 5' # Cada 3 minutos las mañanas de los viernes
+    - cron: '*/3 8-13 * * 5'
   workflow_dispatch:
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-        python-version: '3.10'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: pip install requests
