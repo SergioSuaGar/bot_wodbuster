@@ -56,25 +56,37 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
   fecha_str_esperada = f"{nombre_dia} {fecha_clase.strftime('%d/%m')}"
 
   url_cargar = f"{BASE_URL}/LoadClass.ashx?ticks={ticks}&idu={IDU}"
-  response = requests.get(url_cargar)
-  data = response.json()
+  try:
+    response = requests.get(url_cargar)
+    if not response.text.strip():
+      print(
+          f" -> {fecha_str_esperada}: El servidor devolvió una respuesta"
+          " vacía."
+      )
+      return False
+    data = response.json()
+  except Exception as e:
+    print(
+        f" -> {fecha_str_esperada}: Aún no hay datos disponibles o error al"
+        f" leer JSON ({e})."
+    )
+    return False
 
   clases_del_dia = data.get("Data", [])
   tipo_no_clases = data.get("TipoNoClases", "")
 
-  # CASO 1: El administrador aún no ha abierto la semana de reservas
+  # Si Data está vacío o no hay clases abiertas
   if not clases_del_dia:
     if tipo_no_clases == "NoCalendar":
       print(f" -> {fecha_str_esperada}: Las reservas aún no están abiertas.")
     else:
-      # Si hay algún estado especial o festivo sin clases
       print(
           f" -> {fecha_str_esperada}: No hay clases configuradas"
           f" (TipoNoClases: {tipo_no_clases})."
       )
     return False
 
-  # CASO 2: Buscar la clase de la hora deseada
+  # Buscar la clase de la hora deseada
   id_clase = None
   clase_encontrada_en_horario = False
 
@@ -88,12 +100,11 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
 
           if estado == "Borrable":
             print(f" ¡Ya estás apuntado al {fecha_str_esperada} a las {hora_buscada}!")
-            return True  # Ya está reservado, éxito
+            return True
 
           id_clase = valor.get("Id")
           break
 
-  # Si el bloque de las 16:00 no existe (ej: festivo o horario reducido de mañana)
   if not clase_encontrada_en_horario:
     msg = (
         f"⚠️ *Aviso WodBuster*\nNo hay clase disponible a las {hora_buscada} el"
@@ -101,19 +112,23 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
     )
     print(msg)
     enviar_telegram(msg)
-    return True  # Retornamos True para que el script deje de insistir en este día
+    return True
 
   if not id_clase:
     print(f" -> No se encontró ID válido para las {hora_buscada}.")
     return False
 
-  # CASO 3: Intentar reservar
+  # Intentar reservar
   url_inscribir = (
       f"{BASE_URL}/Calendario_Inscribir.ashx?id={id_clase}&ticks={ticks}"
       f"&idu={IDU}&connectionId={CONNECTION_ID}"
   )
-  res_inscripcion = requests.get(url_inscribir)
-  resultado_json = res_inscripcion.json()
+  try:
+    res_inscripcion = requests.get(url_inscribir)
+    resultado_json = res_inscripcion.json()
+  except Exception as e:
+    print(f"Error al procesar respuesta de inscripción: {e}")
+    return False
 
   if resultado_json.get("Res", {}).get("EsCorrecto"):
     msg = (
@@ -137,9 +152,5 @@ if __name__ == "__main__":
   print("Iniciando verificación de reservas en WodBuster...")
   lunes, miercoles = obtener_proximo_lunes_y_miercoles()
 
-  # Intentar reservar lunes y miércoles a las 16:00
-  exito_lunes = intentar_reservar_dia(lunes, "16:00:00")
-  exito_miercoles = intentar_reservar_dia(miercoles, "16:00:00")
-
-  # Nota: Si quieres que el script de GitHub Actions pare de ejecutarse en cuanto
-  # ambos días estén listos (o avisados por festivo), puedes controlar la salida.
+  intentar_reservar_dia(lunes, "16:00:00")
+  intentar_reservar_dia(miercoles, "16:00:00")
