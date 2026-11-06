@@ -1,0 +1,28 @@
+name: WodBuster Auto-Reservas
+
+on:
+  schedule:
+    - cron: '*/3 8-13 * * 5' # Cada 3 minutos las mañanas de los viernes
+  workflow_dispatch:
+
+jobs:
+  reservar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+        python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run reservation script
+        env:
+          WODBUSTER_IDU: ${{ secrets.WODBUSTER_IDU }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot_wodbuster.py
