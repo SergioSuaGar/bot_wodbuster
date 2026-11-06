@@ -9,6 +9,19 @@ CONNECTION_ID = "xFATStrQAEREx1Nvyfi-Pw"
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# Cabeceras simulando un navegador real para esquivar filtros básicos anti-bot
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "es-ES,es;q=0.9",
+    "Referer": "https://vitalitywellness.wodbuster.com/athlete/reservas.aspx",
+}
+
 
 def enviar_telegram(mensaje):
   if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
@@ -27,7 +40,6 @@ def enviar_telegram(mensaje):
 
 
 def obtener_proximo_lunes_y_miercoles():
-  # Mantenemos tu cálculo exacto de fechas
   hoy = datetime.now()
   dias_hasta_lunes = (0 - hoy.weekday()) % 7
   if dias_hasta_lunes == 0:
@@ -54,13 +66,21 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
   fecha_str_esperada = f"{nombre_dia} {fecha_clase.strftime('%d/%m')}"
 
   url_cargar = f"{BASE_URL}/LoadClass.ashx?ticks={ticks}&idu={IDU}"
-  response = requests.get(url_cargar)
+
+  # Realizamos la petición enviando las cabeceras de navegador
+  response = requests.get(url_cargar, headers=HEADERS)
 
   print(
       f"Consultando {fecha_str_esperada} (Ticks: {ticks}) -> Código HTTP:"
       f" {response.status_code}"
   )
-  print(f"Respuesta textual del servidor: {response.text[:300]}")
+
+  if response.status_code == 403:
+    print(
+        f" -> {fecha_str_esperada}: Cloudflare sigue bloqueando la petición"
+        " (403 Forbidden)."
+    )
+    return False
 
   if not response.text.strip():
     print(f" -> {fecha_str_esperada}: El servidor devolvió texto vacío.")
@@ -68,22 +88,20 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
 
   try:
     data = response.json()
-  except Exception as e:
-    print(f" -> {fecha_str_esperada}: La respuesta no es un JSON válido.")
-    return False
-
-  clases_del_dia = data.get("Data", [])
-  tipo_no_clases = data.get("TipoNoClases", "")
-
-  if not clases_del_dia:
+  except Exception:
     print(
-        f" -> {fecha_str_esperada}: No hay clases en Data (TipoNoClases:"
-        f" {tipo_no_clases})."
+        f" -> {fecha_str_esperada}: No es un JSON válido. Respuesta:"
+        f" {response.text[:200]}"
     )
     return False
 
+  clases_del_dj = data.get("Data", [])
+  if not clases_del_dj:
+    print(f" -> {fecha_str_esperada}: Las reservas aún no están abiertas.")
+    return False
+
   id_clase = None
-  for bloque in clases_del_dia:
+  for bloque in clases_del_dj:
     if bloque.get("Hora") == hora_buscada:
       for val_wrapper in bloque.get("Valores", []):
         valor = val_wrapper.get("Valor", {})
@@ -103,8 +121,7 @@ def intentar_reservar_dia(fecha_clase, hora_buscada="16:00:00"):
       f"{BASE_URL}/Calendario_Inscribir.ashx?id={id_clase}&ticks={ticks}"
       f"&idu={IDU}&connectionId={CONNECTION_ID}"
   )
-  res_inscripcion = requests.get(url_inscribir)
-  print(f"Respuesta de inscripción: {res_inscripcion.text[:300]}")
+  res_inscripcion = requests.get(url_inscribir, headers=HEADERS)
 
   try:
     resultado_json = res_inscripcion.json()
